@@ -1,122 +1,62 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>SVG手書き文字ジェネレーター（上下分割フェードアウト）</title>
+<title>SVG手書き文字ジェネレーター（上下分割フェードアウト 完全版）</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";margin:24px;line-height:1.6}
-  h1{font-size:18px;margin:0 0 12px}
-  fieldset{border:1px solid #ccc;border-radius:8px;padding:12px;margin:0 0 16px}
-  label{display:block;font-size:13px;margin:6px 0 2px}
-  input,select,button,textarea{font:inherit}
-  input[type="text"],input[type="number"],select{width:100%;box-sizing:border-box;padding:6px;border:1px solid #bbb;border-radius:6px}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .preview{border:1px dashed #bbb;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fafafa;min-height:460px}
-  textarea{width:100%;box-sizing:border-box;height:200px;padding:8px;border:1px solid #bbb;border-radius:8px;font-family:ui-monospace,SFMono-Regular,Consolas,Monaco,Menlo,monospace;font-size:12px;white-space:pre}
-  .actions{display:flex;gap:8px;flex-wrap:wrap}
-  .hint{font-size:12px;color:#555}
 </style>
 
-<h1>SVG手書き文字ジェネレーター（上下分割フェードアウト）</h1>
-
-<fieldset>
-  <legend>設定</legend>
-  <div class="row">
-    <div>
-      <label>① テキスト</label>
-      <input id="text" type="text" value="Call of Cthulhu">
-    </div>
-    <div>
-      <label>② 文字色</label>
-      <input id="color" type="text" value="#000000">
-    </div>
-  </div>
-  <div class="row">
-    <div>
-      <label>③ 文字サイズ（px）</label>
-      <input id="fontSize" type="number" value="72">
-    </div>
-    <div>
-      <label>④ フォント</label>
-      <select id="fontFamily">
-        <option value="serif" selected>serif</option>
-        <option value="sans-serif">sans-serif</option>
-        <option value="monospace">monospace</option>
-      </select>
-    </div>
-  </div>
-  <div class="row">
-    <div>
-      <label>⑤ 文字間（px）</label>
-      <input id="letterSpacing" type="number" value="2">
-    </div>
-    <div class="actions" style="align-items:end">
-      <button id="build">SVGを生成</button>
-      <button id="copy">SVGコードをコピー</button>
-      <button id="download">SVGをダウンロード</button>
-    </div>
-  </div>
-</fieldset>
-
-<fieldset>
-  <legend>プレビュー（768×432）</legend>
-  <div class="preview" id="previewArea">ここにSVGが表示されます</div>
-</fieldset>
-
-<fieldset>
-  <legend>生成されたSVGコード</legend>
-  <textarea id="code" readonly></textarea>
-</fieldset>
+<div class="preview" id="previewArea"></div>
 
 <script>
-const measureCanvas = document.createElement('canvas');
-const mctx = measureCanvas.getContext('2d');
-function measureWidth(ch, size, family){
-  mctx.font = `${size}px ${family}`;
-  return mctx.measureText(ch).width;
-}
-function escapeXML(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+const W=768,H=432;
+const text="Call of Cthulhu";
+const color="#000";
+const size=72;
+const family="serif";
+const letter=2;
 
-function buildSVG(){
-  const txt = document.getElementById('text').value;
-  const color = document.getElementById('color').value || '#000';
-  const size = Number(document.getElementById('fontSize').value);
-  const family = document.getElementById('fontFamily').value;
-  const letter = Number(document.getElementById('letterSpacing').value);
+const measure=document.createElement('canvas').getContext('2d');
+measure.font=`${size}px ${family}`;
+function w(ch){return measure.measureText(ch).width;}
+const chars=[...text];
+const widths=chars.map(w);
+const total=widths.reduce((a,b)=>a+b,0)+(chars.length-1)*letter;
+let x=(W-total)/2,begin='0s',id=0;
+const baseY=H/2+size*0.35;
+const strokeW=size*0.38;
+const defs=[],lines=[],fills=[];
+chars.forEach((ch,i)=>{
+  const cw=widths[i];
+  if(ch===' '){x+=cw+letter;return;}
+  const thisId=`a${++id}`;
+  const dash=cw*12;
+  const dur=(0.7*(cw/size)).toFixed(3)+'s';
+  defs.push(`<mask id="m${id}"><text x="${x}" y="${baseY}" font-family="${family}" font-size="${size}" fill="none" stroke="#fff" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">${ch}<animate attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/></text></mask>`);
+  lines.push(`<text x="${x}" y="${baseY}" font-family="${family}" font-size="${size}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">${ch}<animate id="${thisId}" attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/></text>`);
+  fills.push(`<text x="${x}" y="${baseY}" font-family="${family}" font-size="${size}" fill="${color}" mask="url(#m${id})">${ch}</text>`);
+  begin=`${thisId}.end+0.08s`;
+  x+=cw+letter;
+});
+const last=`a${id}`;
+const halfY=H/2;
+const animDur='1.2s';
 
-  const W=768,H=432,baseY=H/2+size*0.35;
-  const chars=[...txt];
-  const widths=chars.map(ch=>measureWidth(ch,size,family));
-  const total=widths.reduce((a,b)=>a+b,0)+(chars.length-1)*letter;
-  let x=(W-total)/2;
-  let id=0,begin='0s';
-  const defs=[],lines=[],fills=[];
-  const strokeW=size*0.38;
-  chars.forEach((ch,i)=>{
-    const w=widths[i];
-    if(ch===' '){x+=w+letter;return;}
-    const thisId=`a${++id}`;
-    const dash=w*12,dur=(0.7*(w/size)).toFixed(3)+'s';
-    defs.push(`<mask id="m${id}"><text x="${x}" y="${baseY}" font-family="${family}" font-size="${size}" fill="none" stroke="#fff" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">${escapeXML(ch)}<animate attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/></text></mask>`);
-    lines.push(`<text x="${x}" y="${baseY}" font-family="${family}" font-size="${size}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">${escapeXML(ch)}<animate id="${thisId}" attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/></text>`);
-    fills.push(`<text x="${x}" y="${baseY}" font-family="${family}" font-size="${size}" fill="${color}" mask="url(#m${id})">${escapeXML(ch)}</text>`);
-    begin=`${thisId}.end+0.08s`;
-    x+=w+letter;
-  });
-
-  const last=`a${id}`;
-  const halfY=H/2;
-  const animDur='1.2s';
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs>${defs.join('\n')}</defs>
+
   <g id="all">
     ${lines.join('\n')}
     ${fills.join('\n')}
   </g>
+
   <!-- 上半分 -->
   <mask id="maskTop"><rect x="0" y="0" width="${W}" height="${halfY}" fill="#fff"/></mask>
   <!-- 下半分 -->
   <mask id="maskBottom"><rect x="0" y="${halfY}" width="${W}" height="${halfY}" fill="#fff"/></mask>
 
+  <!-- 上が右へ、下が左へ -->
   <use href="#all" mask="url(#maskTop)">
     <animateTransform attributeName="transform" type="translate" from="0 0" to="200 0" dur="${animDur}" begin="${last}.end+1s" fill="freeze"/>
     <animate attributeName="opacity" from="1" to="0" dur="${animDur}" begin="${last}.end+1s" fill="freeze"/>
@@ -125,15 +65,10 @@ function buildSVG(){
     <animateTransform attributeName="transform" type="translate" from="0 0" to="-200 0" dur="${animDur}" begin="${last}.end+1s" fill="freeze"/>
     <animate attributeName="opacity" from="1" to="0" dur="${animDur}" begin="${last}.end+1s" fill="freeze"/>
   </use>
+
+  <!-- 元の文字（静止体）も同時にフェードアウト -->
+  <animate xlink:href="#all" attributeName="opacity" from="1" to="0" dur="${animDur}" begin="${last}.end+1s" fill="freeze"/>
 </svg>`;
 
-  document.getElementById('code').value=svg;
-  document.getElementById('previewArea').innerHTML=svg;
-}
-
-document.getElementById('build').onclick=e=>{e.preventDefault();buildSVG();};
-document.getElementById('copy').onclick=e=>{e.preventDefault();const t=document.getElementById('code');t.select();document.execCommand('copy');};
-document.getElementById('download').onclick=e=>{e.preventDefault();const s=document.getElementById('code').value;const b=new Blob([s],{type:'image/svg+xml'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='handwrite.svg';a.click();URL.revokeObjectURL(u);};
-
-buildSVG();
+document.getElementById('previewArea').innerHTML=svg;
 </script>
