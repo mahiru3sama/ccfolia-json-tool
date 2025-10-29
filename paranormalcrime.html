@@ -1,0 +1,233 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SVG手書き文字ジェネレーター（残像対策：下→消→上分割）</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans JP",sans-serif;margin:24px;line-height:1.6}
+  h1{font-size:18px;margin:0 0 12px}
+  fieldset{border:1px solid #ccc;border-radius:8px;padding:12px;margin:0 0 16px}
+  label{display:block;font-size:13px;margin:6px 0 2px}
+  input,select,button,textarea{font:inherit}
+  input[type="text"],input[type="number"],select{width:100%;box-sizing:border-box;padding:6px;border:1px solid #bbb;border-radius:6px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .preview{border:1px dashed #bbb;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fafafa;min-height:460px}
+  textarea{width:100%;box-sizing:border-box;height:220px;padding:8px;border:1px solid #bbb;border-radius:8px;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12px;white-space:pre}
+  .hint{font-size:12px;color:#555}
+</style>
+
+<h1>SVG手書き文字ジェネレーター（残像対策：下→消→上分割）</h1>
+
+<fieldset>
+  <legend>設定</legend>
+  <div class="row">
+    <div>
+      <label>① テキスト</label>
+      <input id="text" type="text" value="Call of Cthulhu">
+    </div>
+    <div>
+      <label>② 文字色</label>
+      <input id="color" type="text" value="#000000">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>③ 文字サイズ（px）</label>
+      <input id="fontSize" type="number" value="72" min="8" step="1">
+    </div>
+    <div>
+      <label>④ フォント（候補）</label>
+      <select id="fontFamilySelect">
+        <option value="serif" selected>serif（明朝・汎用）</option>
+        <option value="sans-serif">sans-serif（ゴシック・汎用）</option>
+        <option value="monospace">monospace（等幅）</option>
+        <option value="Georgia, serif">Georgia</option>
+        <option value="Times New Roman, serif">Times New Roman</option>
+        <option value="Garamond, serif">Garamond</option>
+        <option value="Palatino, serif">Palatino</option>
+        <option value="Arial, Helvetica, sans-serif">Arial</option>
+        <option value="Verdana, sans-serif">Verdana</option>
+        <option value="Tahoma, sans-serif">Tahoma</option>
+        <option value="Trebuchet MS, sans-serif">Trebuchet MS</option>
+        <option value="Impact, sans-serif">Impact</option>
+        <option value="Courier New, monospace">Courier New</option>
+        <option value="Noto Sans JP, sans-serif">Noto Sans JP（端末にある場合）</option>
+      </select>
+      <div class="hint">※下の「任意フォント」を入力した場合はそちらを優先します。</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>④-補 任意フォント指定（空なら上の選択を使用）</label>
+      <input id="fontFamilyFree" type="text" placeholder="例）'Yu Mincho','Hiragino Mincho ProN',serif">
+    </div>
+    <div>
+      <label>⑤ 文字間（px）</label>
+      <input id="letterSpacing" type="number" value="2" step="0.5">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>⑥ 1文字の基準描画秒（baseDur, s）</label>
+      <input id="baseDur" type="number" value="0.75" step="0.05" min="0.05">
+      <div class="hint">大きいほどゆっくり。字幅で自動補正します。</div>
+    </div>
+    <div>
+      <label>⑦ 分割・消滅の秒数（s）</label>
+      <input id="fadeSec" type="number" value="1.2" step="0.1" min="0.1">
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="build">SVGを生成</button>
+    <button id="copy">SVGをコピー</button>
+    <button id="download">SVGをダウンロード</button>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>プレビュー（768×432）</legend>
+  <div class="preview" id="previewArea">ここにSVGが表示されます</div>
+</fieldset>
+
+<fieldset>
+  <legend>生成SVGコード</legend>
+  <textarea id="code" readonly></textarea>
+</fieldset>
+
+<script>
+  // 計測キャンバス
+  const measureCanvas=document.createElement('canvas');
+  const mctx=measureCanvas.getContext('2d');
+  function measureWidth(ch,size,family){mctx.font=`${size}px ${family}`;return mctx.measureText(ch).width;}
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+  function buildSVG(){
+    const txt=document.getElementById('text').value||'';
+    const color=document.getElementById('color').value||'#000';
+    const size=Math.max(8, Number(document.getElementById('fontSize').value||72));
+    const familyFree=(document.getElementById('fontFamilyFree').value||'').trim();
+    const familySel=document.getElementById('fontFamilySelect').value;
+    const family=familyFree||familySel;
+    const letter=Number(document.getElementById('letterSpacing').value||0);
+    const baseDur=Math.max(0.05, Number(document.getElementById('baseDur').value||0.75));
+    const fadeSec=Math.max(0.1, Number(document.getElementById('fadeSec').value||1.2));
+
+    // 残像対策のシーケンス（短い重ね合わせ→下を完全除外→上を分割移動）
+    const overlapSec = 0.05;   // 下を残すごく短い時間
+    const gapSec     = 0.01;   // display:none 切替後の安全マージン
+    // 768×432（16:9・24px倍数）
+    const W=768,H=432;
+    const baselineY=Math.round(H/2)+Math.round(size*0.35);
+
+    const chars=[...txt];
+    const widths=chars.map(ch=>measureWidth(ch,size,family));
+    const total=widths.reduce((a,b)=>a+b,0)+Math.max(0,chars.length-1)*letter;
+    let x=(W-total)/2;
+
+    const strokeW=Math.max(8, size*0.38);
+    const dashFor=w=>Math.max(300, w*12);
+    const durFor=w=>(baseDur*Math.max(0.5, Math.min(1.6, w/(size*0.6)))).toFixed(3)+'s';
+
+    let begin='0s', id=0;
+    const maskDefs=[], traceTexts=[], fillTexts=[];
+    chars.forEach((ch,i)=>{
+      const w=widths[i];
+      if(ch===' '){ x+=w+letter; return; }
+      const thisId=`a${++id}`;
+      const dash=Math.round(dashFor(w));
+      const dur=durFor(w);
+      const mx=Math.round(x);
+
+      // 手書き線（trace）用マスク
+      maskDefs.push(
+        `<mask id="m${id}">`+
+        `<text x="${mx}" y="${baselineY}" font-family="${family}" font-size="${size}" fill="none" stroke="#fff" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">`+
+        `${esc(ch)}<animate attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/></text>`+
+        `</mask>`
+      );
+
+      // 走る線（trace）：描画後に即座に消す（残像防止）
+      traceTexts.push(
+        `<text x="${mx}" y="${baselineY}" font-family="${family}" font-size="${size}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">`+
+        `${esc(ch)}<animate id="${thisId}" attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/></text>`
+      );
+
+      // 塗り（塗りだけを後段で複製・分割移動に使用）
+      fillTexts.push(
+        `<text x="${mx}" y="${baselineY}" font-family="${family}" font-size="${size}" fill="${color}" mask="url(#m${id})">${esc(ch)}</text>`
+      );
+
+      begin=`${thisId}.end+0.08s`;
+      x+=w+letter;
+    });
+
+    const lastId = id ? `a${id}` : null;
+    const beginBottom = lastId ? `${lastId}.end+${overlapSec}s` : '0s';
+    const beginTop    = lastId ? `${lastId}.end+${(overlapSec+gapSec).toFixed(2)}s` : '0s';
+    const halfY = H/2;
+
+    const svg =
+`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <defs>
+    ${maskDefs.join('\n    ')}
+    <!-- 上半分/下半分のマスク -->
+    <mask id="maskTop"><rect x="0" y="0" width="${W}" height="${halfY}" fill="#fff"/></mask>
+    <mask id="maskBottom"><rect x="0" y="${halfY}" width="${W}" height="${halfY}" fill="#fff"/></mask>
+
+    <!-- 塗り専用の元データを <symbol> に格納（直接は描画しない） -->
+    <symbol id="glyphs" viewBox="0 0 ${W} ${H}">
+      ${fillTexts.join('\n      ')}
+    </symbol>
+  </defs>
+
+  <!-- 手書き線（trace）を表示：描画完了直後に透明化して残像を防止 -->
+  <g id="trace">
+    ${traceTexts.join('\n    ')}
+    ${lastId ? `<animate attributeName="opacity" from="1" to="0" dur="0.1s" begin="${lastId}.end+0.01s" fill="freeze"/>` : ''}
+  </g>
+
+  <!-- 下レイヤー：ごく短時間だけ重ね、その後 display:none で完全除外 -->
+  <use id="layerBottom" href="#glyphs" xlink:href="#glyphs">
+    ${lastId ? `<set attributeName="display" to="none" begin="${beginBottom}" />` : ''}
+  </use>
+
+  <!-- 上レイヤー（上下分割して左右へ移動しながらフェード） -->
+  <use id="layerTopUp" href="#glyphs" xlink:href="#glyphs" mask="url(#maskTop)">
+    ${lastId ? `<animateTransform attributeName="transform" type="translate" from="0 0" to="200 0" dur="${fadeSec}s" begin="${beginTop}" fill="freeze"/>` : ''}
+    ${lastId ? `<animate attributeName="opacity" from="1" to="0" dur="${fadeSec}s" begin="${beginTop}" fill="freeze"/>` : ''}
+  </use>
+  <use id="layerTopDown" href="#glyphs" xlink:href="#glyphs" mask="url(#maskBottom)">
+    ${lastId ? `<animateTransform attributeName="transform" type="translate" from="0 0" to="-200 0" dur="${fadeSec}s" begin="${beginTop}" fill="freeze"/>` : ''}
+    ${lastId ? `<animate attributeName="opacity" from="1" to="0" dur="${fadeSec}s" begin="${beginTop}" fill="freeze"/>` : ''}
+  </use>
+</svg>`;
+
+    document.getElementById('code').value = svg;
+    document.getElementById('previewArea').innerHTML = svg;
+  }
+
+  document.getElementById('build').addEventListener('click', e=>{e.preventDefault();buildSVG();});
+  document.getElementById('copy').addEventListener('click', e=>{
+    e.preventDefault();
+    const t=document.getElementById('code');
+    t.select(); t.setSelectionRange(0, 999999);
+    document.execCommand('copy');
+  });
+  document.getElementById('download').addEventListener('click', e=>{
+    e.preventDefault();
+    const svg=document.getElementById('code').value||'';
+    const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='handwrite.svg';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  // 初期生成
+  buildSVG();
+</script>
