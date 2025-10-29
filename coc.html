@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>SVG手書き文字ジェネレーター（1文字ずつ）</title>
+<title>SVG手書き文字ジェネレーター（1文字ずつ・回転フェード付き）</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";margin:24px;line-height:1.6}
@@ -16,7 +16,7 @@
   .hint{font-size:12px;color:#555}
 </style>
 
-<h1>SVG手書き文字ジェネレーター（1文字ずつ・SVGだけで完結）</h1>
+<h1>SVG手書き文字ジェネレーター（1文字ずつ・回転フェード付き）</h1>
 
 <fieldset>
   <legend>設定</legend>
@@ -24,12 +24,12 @@
     <div>
       <label>① テキスト</label>
       <input id="text" type="text" value="Call of Cthulhu">
-      <div class="hint">横書き。空白はその分だけ間隔が空きます。</div>
+      <div class="hint">横書き。空白は間として扱います（描画はしません）。</div>
     </div>
     <div>
       <label>② 文字色</label>
       <input id="color" type="text" value="#000000">
-      <div class="hint">CSSカラー（例: #000, black, rgb(0,0,0) など）</div>
+      <div class="hint">例: #000, black, rgb(0,0,0) など</div>
     </div>
   </div>
 
@@ -51,7 +51,7 @@
         <option value="Tahoma, sans-serif">Tahoma</option>
         <option value="Verdana, sans-serif">Verdana</option>
       </select>
-      <div class="hint">GitHub Pages上でOSにあるフォントが使われます。</div>
+      <div class="hint">OSにあるフォントを使用します。</div>
     </div>
   </div>
 
@@ -62,9 +62,9 @@
       <div class="hint">正の値で広く、負の値で狭く。</div>
     </div>
     <div>
-      <label>描画時間（1文字あたりの基準秒）</label>
-      <input id="baseDur" type="number" value="0.75" step="0.05" min="0.1">
-      <div class="hint">例：0.75 なら1文字 約0.75秒。幅に応じて自動補正されます。</div>
+      <label>描画時間（1文字の基準秒）</label>
+      <input id="baseDur" type="number" value="0.75" step="0.05" min="0.05">
+      <div class="hint">幅に応じて自動補正されます。</div>
     </div>
   </div>
 
@@ -72,7 +72,6 @@
     <div>
       <label>キャンバス（固定）</label>
       <input disabled value="768 × 432（16:9・24px倍数）">
-      <div class="hint">要件に合わせ固定。必要ならHTMLを書き換えて他の(384n×216n)に。</div>
     </div>
     <div class="actions" style="align-items:end">
       <button id="build">SVGを生成</button>
@@ -93,13 +92,15 @@
 </fieldset>
 
 <script>
-  // 計測用オフスクリーンCanvas（正確な文字幅の取得）
+  // 幅計測用キャンバス
   const measureCanvas = document.createElement('canvas');
   const mctx = measureCanvas.getContext('2d');
-
-  function measureWidth(char, size, family){
+  function measureWidth(ch, size, family){
     mctx.font = `${size}px ${family}`;
-    return mctx.measureText(char).width;
+    return mctx.measureText(ch).width;
+  }
+  function escapeXML(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   function buildSVG(){
@@ -110,89 +111,93 @@
     const letter = Number(document.getElementById('letterSpacing').value || 0);
     const baseDur = Math.max(0.05, Number(document.getElementById('baseDur').value || 0.75));
 
-    const W = 768, H = 432;           // 16:9・24px倍数固定
-    const baselineY = Math.round(H/2) + Math.round(size*0.35); // 視覚中心に置く
-    // 各文字幅を計測してレイアウト
+    const W = 768, H = 432;
+    const baselineY = Math.round(H/2) + Math.round(size*0.35);
+
     const chars = [...txt];
-    const widths = chars.map(ch => ch === ' ' ? measureWidth(' ', size, family) : measureWidth(ch, size, family));
-    // 合計幅（文字間を足す。ただし最後の後ろは足さない）
+    const widths = chars.map(ch => measureWidth(ch, size, family));
     const total = widths.reduce((a,b)=>a+b,0) + Math.max(0, chars.length-1)*letter;
     const startX = (W - total)/2;
 
-    // マスク用ストローク太さ（文字サイズに応じて）
     const maskStroke = Math.max(8, size * 0.38);
-    // 目視に十分なダッシュ長（字幅比例で変化）
     const dashFor = w => Math.max(300, w * 12);
-    // 文字の幅に応じて所要時間を補正（大きい字ほど長め）
-    const durFor = w => (baseDur * Math.max(0.5, Math.min(1.5, w / (size * 0.6)))).toFixed(3) + 's';
+    const durFor  = w => (baseDur * Math.max(0.5, Math.min(1.5, w / (size * 0.6)))).toFixed(3) + 's';
 
-    // 文字ごとに x を積み上げ
     let x = startX;
-    let beginId = '0s'; // 先頭開始
-    let idSeq = 0;
+    let beginId = '0s';
+    let idSeq = 0; // 非スペースのみに採番
 
-    let defs = [];
-    let outlines = [];
-    let fills = [];
+    const defs = [];
+    const outlines = [];
+    const fills = [];
 
     chars.forEach((ch, idx) => {
       const w = widths[idx];
-      const thisId = `a${++idSeq}`;
-      const nextBegin = `${thisId}.end+0.08s`;
-
-      if(ch === ' '){
-        // 空白は描画しない（位置だけ進める、次のbeginは現状維持）
+      if (ch === ' '){
+        // スペースではIDを作らず、タイミングも進めない（描画チェーンを維持）
         x += w + letter;
         return;
       }
-
+      const thisId = `a${++idSeq}`;
+      const nextBegin = `${thisId}.end+0.08s`;
       const dash = Math.round(dashFor(w));
       const dur = durFor(w);
       const mx = Math.round(x);
 
-      // マスク（白ストロークで塗りを露出）
+      // マスク（白ストロークで塗り露出）
       defs.push(
-        `<mask id="m${idSeq}">`+
-        `<text x="${mx}" y="${baselineY}" font-family="${family}" font-size="${size}" fill="none" stroke="#fff" stroke-width="${maskStroke}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">${escapeXML(ch)}<animate attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${beginId}" fill="freeze"/></text>`+
+        `<mask id="m${idSeq}">` +
+        `<text x="${mx}" y="${baselineY}" font-family="${family}" font-size="${size}" fill="none" stroke="#fff" stroke-width="${maskStroke}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">` +
+        `${escapeXML(ch)}<animate attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${beginId}" fill="freeze"/></text>` +
         `</mask>`
       );
 
-      // アウトライン（書いている線を見せる）
+      // アウトライン（書画線）
       outlines.push(
-        `<text x="${mx}" y="${baselineY}" font-family="${family}" font-size="${size}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">`+
+        `<text x="${mx}" y="${baselineY}" font-family="${family}" font-size="${size}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">` +
         `${escapeXML(ch)}<animate id="${thisId}" attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${beginId}" fill="freeze"/></text>`
       );
 
-      // 塗り（黒や指定色）。描いたところだけ露出
+      // 塗り（描いた軌跡のみ可視）
       fills.push(
         `<text x="${mx}" y="${baselineY}" font-family="${family}" font-size="${size}" fill="${color}" mask="url(#m${idSeq})">${escapeXML(ch)}</text>`
       );
 
-      // 次文字の開始をつなぐ
       beginId = nextBegin;
       x += w + letter;
     });
 
+    // 全体を包む <g id="all">（回転＋フェード対象）
+    const lastId = idSeq > 0 ? `a${idSeq}` : null;
+    const rotateDur = '2s';
+    const fadeDur   = '1.5s';
+    const beginAll  = lastId ? `${lastId}.end+1s` : '0s'; // 文字が無い場合でも動作
+
     const svg =
-`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <!-- 背景は透明・SVG単体で完結（SMILアニメ） -->
+`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <!-- 背景は透明・SVG単体（SMIL） -->
   <defs>
     ${defs.join('\n    ')}
   </defs>
 
-  <!-- 書いている線（輪郭） -->
-  ${outlines.join('\n  ')}
+  <g id="all" transform-origin="${W/2} ${H/2}">
+    <!-- 書いている線（輪郭） -->
+    ${outlines.join('\n    ')}
 
-  <!-- 塗り（描いた軌跡にだけ表示） -->
-  ${fills.join('\n  ')}
+    <!-- 塗り（描いた軌跡にだけ表示） -->
+    ${fills.join('\n    ')}
+  </g>
+
+  <!-- 全体回転＋フェードアウト -->
+  <animateTransform xlink:href="#all" attributeName="transform" type="rotate"
+                    from="0 ${W/2} ${H/2}" to="360 ${W/2} ${H/2}"
+                    dur="${rotateDur}" begin="${beginAll}" fill="freeze"/>
+  <animate xlink:href="#all" attributeName="opacity"
+           from="1" to="0" dur="${fadeDur}" begin="${beginAll}" fill="freeze"/>
 </svg>`;
 
     document.getElementById('code').value = svg;
     document.getElementById('previewArea').innerHTML = svg;
-  }
-
-  function escapeXML(s){
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   document.getElementById('build').addEventListener('click', e => { e.preventDefault(); buildSVG(); });
