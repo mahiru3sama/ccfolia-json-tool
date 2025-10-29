@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>SVG手書き → 上下分割 → ②が浮かび上がる（完全版）</title>
+<title>SVG手書き → 上下分割 → ②が浮かび上がり → 指定秒後に透明化</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans JP",sans-serif;margin:24px;line-height:1.6}
@@ -16,7 +16,7 @@
   .hint{font-size:12px;color:#555}
 </style>
 
-<h1>①手書き → 上下分割消滅 → ②が浮かび上がる（SVG単体/SMIL）</h1>
+<h1>①手書き → 上下分割消滅 → ②浮上 → 指定秒後に透明化（SVG/SMIL）</h1>
 
 <fieldset>
   <legend>① 手書きテキスト（分割消滅する文字）</legend>
@@ -53,7 +53,7 @@
         <option value="Courier New, monospace">Courier New</option>
         <option value="Noto Sans JP, sans-serif">Noto Sans JP</option>
       </select>
-      <div class="hint">下の任意フォントが空でなければそちらが優先されます。</div>
+      <div class="hint">下の任意フォントが空ならこの選択を使用します。</div>
     </div>
   </div>
   <div class="row">
@@ -80,7 +80,7 @@
 </fieldset>
 
 <fieldset>
-  <legend>② 浮かび上がるテキスト（①の後に出現）</legend>
+  <legend>② 浮かび上がるテキスト（①の後に出現 → 指定秒後に透明化）</legend>
   <div class="row">
     <div>
       <label>テキスト②</label>
@@ -128,12 +128,22 @@
   </div>
   <div class="row">
     <div>
-      <label>浮かび上がり秒数②（s）</label>
+      <label>②のフェードイン秒数（s）</label>
       <input id="riseDur" type="number" value="0.9" step="0.1" min="0.1">
     </div>
     <div>
-      <label>出現までの待ち秒（①完了後 + 何秒）</label>
+      <label>①完了→②出現までの待ち秒（s）</label>
       <input id="afterDelay" type="number" value="0.2" step="0.05" min="0">
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>②の表示維持秒数（透明化までの待ち秒）</label>
+      <input id="hold2" type="number" value="1.5" step="0.1" min="0">
+    </div>
+    <div>
+      <label>②の消滅フェード秒数（s）</label>
+      <input id="fade2" type="number" value="0.8" step="0.1" min="0.05">
     </div>
   </div>
 </fieldset>
@@ -155,104 +165,96 @@
 </fieldset>
 
 <script>
-  // 計測
   const meas=document.createElement('canvas').getContext('2d');
   function widthOf(ch,size,family){meas.font=`${size}px ${family}`;return meas.measureText(ch).width;}
   function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
   function buildSVG(){
-    // 入力値
-    const t1  = document.getElementById('text1').value || '';
-    const c1  = document.getElementById('color1').value || '#000';
-    const s1  = Math.max(8, Number(document.getElementById('size1').value||72));
-    const f1  = (document.getElementById('font1free').value||'').trim() || document.getElementById('font1sel').value;
-    const ls1 = Number(document.getElementById('letter1').value||0);
-    const bd1 = Math.max(0.05, Number(document.getElementById('baseDur1').value||0.75));
-    const spD = Math.max(0.1, Number(document.getElementById('splitDur').value||1.2));
+    // ①
+    const t1=document.getElementById('text1').value||'';
+    const c1=document.getElementById('color1').value||'#000';
+    const s1=Math.max(8, Number(document.getElementById('size1').value||72));
+    const f1=(document.getElementById('font1free').value||'').trim() || document.getElementById('font1sel').value;
+    const ls1=Number(document.getElementById('letter1').value||0);
+    const bd1=Math.max(0.05, Number(document.getElementById('baseDur1').value||0.75));
+    const spD=Math.max(0.1, Number(document.getElementById('splitDur').value||1.2));
 
-    const t2  = document.getElementById('text2').value || '';
-    const c2  = document.getElementById('color2').value || '#000';
-    const s2  = Math.max(8, Number(document.getElementById('size2').value||56));
-    const f2  = (document.getElementById('font2free').value||'').trim() || document.getElementById('font2sel').value;
-    const ls2 = Number(document.getElementById('letter2').value||0);
-    const rD  = Math.max(0.1, Number(document.getElementById('riseDur').value||0.9));
-    const aD  = Math.max(0, Number(document.getElementById('afterDelay').value||0.2));
+    // ②
+    const t2=document.getElementById('text2').value||'';
+    const c2=document.getElementById('color2').value||'#000';
+    const s2=Math.max(8, Number(document.getElementById('size2').value||56));
+    const f2=(document.getElementById('font2free').value||'').trim() || document.getElementById('font2sel').value;
+    const ls2=Number(document.getElementById('letter2').value||0);
+    const rD=Math.max(0.1, Number(document.getElementById('riseDur').value||0.9));
+    const aD=Math.max(0, Number(document.getElementById('afterDelay').value||0.2));
+    const hold2=Math.max(0, Number(document.getElementById('hold2').value||1.5));
+    const fade2=Math.max(0.05, Number(document.getElementById('fade2').value||0.8));
 
     // キャンバス
     const W=768, H=432;
-    const baseY1 = Math.round(H/2) + Math.round(s1*0.35);
-    const baseY2 = Math.round(H/2) + Math.round(s2*0.35);
+    const baseY1 = Math.round(H/2)+Math.round(s1*0.35);
+    const baseY2 = Math.round(H/2)+Math.round(s2*0.35);
 
-    // ①配置計算
-    const ch1=[...t1];
-    const w1 = ch1.map(ch=>widthOf(ch,s1,f1));
-    const tot1 = w1.reduce((a,b)=>a+b,0) + Math.max(0, ch1.length-1)*ls1;
+    // ①配置
+    const ch1=[...t1], w1=ch1.map(ch=>widthOf(ch,s1,f1));
+    const tot1 = w1.reduce((a,b)=>a+b,0)+Math.max(0,ch1.length-1)*ls1;
     let x1 = (W - tot1)/2;
 
-    // ②配置計算
-    const ch2=[...t2];
-    const w2 = ch2.map(ch=>widthOf(ch,s2,f2));
-    const tot2 = w2.reduce((a,b)=>a+b,0) + Math.max(0, ch2.length-1)*ls2;
+    // ②配置
+    const ch2=[...t2], w2=ch2.map(ch=>widthOf(ch,s2,f2));
+    const tot2 = w2.reduce((a,b)=>a+b,0)+Math.max(0,ch2.length-1)*ls2;
     let x2 = (W - tot2)/2;
 
-    // ①手書き用パラメータ
-    const strokeW = Math.max(8, s1*0.38);
-    const dashFor = w => Math.max(300, w*12);
-    const durFor  = w => (bd1 * Math.max(0.5, Math.min(1.6, w/(s1*0.6)))).toFixed(3)+'s';
+    // ①手書きパラメータ
+    const strokeW=Math.max(8, s1*0.38);
+    const dashFor=w=>Math.max(300, w*12);
+    const durFor =w=>(bd1*Math.max(0.5, Math.min(1.6, w/(s1*0.6)))).toFixed(3)+'s';
 
-    // 構築：①のマスク/線/塗り
+    // ① 構築
     let begin='0s', id=0;
     const maskDefs=[], traceTexts=[], fillTextsA=[];
     ch1.forEach((ch,i)=>{
-      const w = w1[i];
-      if(ch===' '){ x1 += w + ls1; return; }
-      const aid = `a${++id}`;
-      const dash = Math.round(dashFor(w));
-      const dur  = durFor(w);
-      const mx   = Math.round(x1);
+      const w=w1[i];
+      if(ch===' '){ x1+=w+ls1; return; }
+      const aid=`a${++id}`;
+      const dash=Math.round(dashFor(w));
+      const dur=durFor(w);
+      const mx=Math.round(x1);
 
-      // マスク
       maskDefs.push(
         `<mask id="m${id}">`+
           `<text x="${mx}" y="${baseY1}" font-family="${f1}" font-size="${s1}" fill="none" stroke="#fff" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">`+
-            `${esc(ch)}<animate attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/>`+
-          `</text>`+
+          `${esc(ch)}<animate attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/></text>`+
         `</mask>`
       );
-      // 走る線（描画直後に透明化する）
       traceTexts.push(
         `<text x="${mx}" y="${baseY1}" font-family="${f1}" font-size="${s1}" fill="none" stroke="${c1}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${dash}" stroke-dashoffset="${dash}">`+
-          `${esc(ch)}<animate id="${aid}" attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/>`+
-        `</text>`
+        `${esc(ch)}<animate id="${aid}" attributeName="stroke-dashoffset" from="${dash}" to="0" dur="${dur}" begin="${begin}" fill="freeze"/></text>`
       );
-      // 塗り（後段で複製・分割）
       fillTextsA.push(
         `<text x="${mx}" y="${baseY1}" font-family="${f1}" font-size="${s1}" fill="${c1}" mask="url(#m${id})">${esc(ch)}</text>`
       );
-
-      begin = `${aid}.end+0.08s`;
-      x1 += w + ls1;
+      begin=`${aid}.end+0.08s`;
+      x1+=w+ls1;
     });
 
     const lastId = id ? `a${id}` : null;
-    const overlap = 0.05; // 下レイヤーをわずかに残す時間
-    const gap     = 0.01; // display:none 後の安全マージン
+    const overlap=0.05; // 下レイヤーを短時間だけ残す
+    const gap=0.01;     // display:none 切替後の安全マージン
     const beginBottom = lastId ? `${lastId}.end+${overlap}s` : '0s';
     const beginTop    = lastId ? `${lastId}.end+${(overlap+gap).toFixed(2)}s` : '0s';
-    const halfY = H/2;
+    const halfY=H/2;
 
-    // ②の塗り（中央配置・後でフェードイン上昇）
+    // ②（塗り文字）
     const fillTextsB=[];
     ch2.forEach((ch,i)=>{
-      const w = w2[i];
-      const mx = Math.round(x2);
-      fillTextsB.push(
-        `<text x="${mx}" y="${baseY2}" font-family="${f2}" font-size="${s2}" fill="${c2}">${esc(ch)}</text>`
-      );
-      x2 += w + ls2;
+      const w=w2[i];
+      const mx=Math.round(x2);
+      fillTextsB.push(`<text x="${mx}" y="${baseY2}" font-family="${f2}" font-size="${s2}" fill="${c2}">${esc(ch)}</text>`);
+      x2+=w+ls2;
     });
 
-    // SVG生成
+    // SVG
     const svg =
 `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs>
@@ -260,29 +262,26 @@
     <mask id="maskTop"><rect x="0" y="0" width="${W}" height="${halfY}" fill="#fff"/></mask>
     <mask id="maskBottom"><rect x="0" y="${halfY}" width="${W}" height="${halfY}" fill="#fff"/></mask>
 
-    <!-- ①の塗りだけを束ねた symbol（表示は常に <use> 経由） -->
     <symbol id="glyphsA" viewBox="0 0 ${W} ${H}">
       ${fillTextsA.join('\n      ')}
     </symbol>
-
-    <!-- ②（浮かび上がる文字）も symbol 化 -->
     <symbol id="glyphsB" viewBox="0 0 ${W} ${H}">
       ${fillTextsB.join('\n      ')}
     </symbol>
   </defs>
 
-  <!-- ① 手書き線（trace）：描き終わり直後に透明化 -->
+  <!-- ① 手書き線：描画直後に透明化（残像防止） -->
   <g id="traceA">
     ${traceTexts.join('\n    ')}
     ${lastId ? `<animate attributeName="opacity" from="1" to="0" dur="0.1s" begin="${lastId}.end+0.01s" fill="freeze"/>` : ''}
   </g>
 
-  <!-- ① 下レイヤー：短時間だけ重ね、display:none で完全除外 -->
+  <!-- ① 下レイヤー：短時間の重ね → 完全除外 -->
   <use id="layerBottomA" href="#glyphsA" xlink:href="#glyphsA">
     ${lastId ? `<set attributeName="display" to="none" begin="${beginBottom}" />` : ''}
   </use>
 
-  <!-- ① 上レイヤー（上下分割→左右移動しながらフェード）。片方の移動に id を付け、②の開始トリガにする -->
+  <!-- ① 上レイヤー（上下分割→左右移動＋フェード） -->
   <use id="layerTopA_Up" href="#glyphsA" xlink:href="#glyphsA" mask="url(#maskTop)">
     ${lastId ? `<animateTransform id="splitMove" attributeName="transform" type="translate" from="0 0" to="200 0" dur="${spD}s" begin="${beginTop}" fill="freeze"/>` : ''}
     ${lastId ? `<animate attributeName="opacity" from="1" to="0" dur="${spD}s" begin="${beginTop}" fill="freeze"/>` : ''}
@@ -292,10 +291,13 @@
     ${lastId ? `<animate attributeName="opacity" from="1" to="0" dur="${spD}s" begin="${beginTop}" fill="freeze"/>` : ''}
   </use>
 
-  <!-- ② 浮かび上がる（splitMove の終了 + 任意遅延で開始） -->
+  <!-- ② 浮かび上がる → 指定秒後に透明化 -->
   <use id="textB" href="#glyphsB" xlink:href="#glyphsB" opacity="0">
-    <animate attributeName="opacity" from="0" to="1" dur="${rD}s" begin="splitMove.end+${aD}s" fill="freeze"/>
+    <!-- フェードイン（基準：splitMove の終了 + afterDelay）-->
+    <animate id="appearB" attributeName="opacity" from="0" to="1" dur="${rD}s" begin="splitMove.end+${aD}s" fill="freeze"/>
     <animateTransform attributeName="transform" type="translate" from="0 12" to="0 0" dur="${rD}s" begin="splitMove.end+${aD}s" fill="freeze"/>
+    <!-- 指定保持時間（hold2）後にフェードアウト開始 -->
+    <animate attributeName="opacity" from="1" to="0" dur="${fade2}s" begin="appearB.end+${hold2}s" fill="freeze"/>
   </use>
 </svg>`;
 
@@ -316,7 +318,7 @@
     const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
-    a.href=url; a.download='handwrite_two_stage.svg';
+    a.href=url; a.download='handwrite_two_stage_autohide.svg';
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   });
@@ -324,4 +326,3 @@
   // 初期生成
   buildSVG();
 </script>
-</body></html>
