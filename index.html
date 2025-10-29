@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>いあきゃら → ココフォリア貼り付け用 JSON 変換（公開版）</title>
+<title>いあきゃら → ココフォリア（公開版）</title>
 <style>
   body{font:14px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;}
   .sticky{position:sticky;top:0;z-index:10;background:#fff;padding:10px 0 6px;margin:0 0 10px;border-bottom:1px solid #e5e5e5}
@@ -20,18 +20,18 @@
 </style>
 
 <div class="sticky">
-  <div class="title">いあきゃら → ココフォリア貼り付け用 JSON 変換（status並び替え/追加/削除・name編集＋SAN=POW×5）</div>
+  <div class="title">いあきゃら → ココフォリア 変換（status並び替え/追加/削除・name編集＋SAN入力）</div>
   <div class="small">
-    1) JSON貼り付け → <b>解析（status表示）</b>（ここで SAN に POW×5 を自動反映）→ 並び替え/追加/削除/編集・name編集 →
-    2) <b>▶ 実行</b>（commands 書換＆params追記） → 3) <b>📋 コピー</b>
+    1) いあきゃら貼り付け → <b>解析</b>statusの並び替え/追加/削除/編集＆name編集 →
+    2) <b>▶ 実行</b> → 3) <b>📋 コピー</b>
   </div>
 </div>
 
 <div class="box">
   <div class="row">
     <div style="flex:1;min-width:320px">
-      <label><b>いあきゃらJSON（貼り付け）</b></label>
-      <textarea id="input" placeholder="いあきゃらでコピーしたJSONを貼り付け"></textarea>
+      <label><b>いあきゃら（貼り付け）</b></label>
+      <textarea id="input" placeholder="いあきゃらでコピーしたものを貼り付け"></textarea>
     </div>
     <div style="flex:1;min-width:320px">
       <label><b>変換結果（ココフォリアに貼り付け可）</b></label>
