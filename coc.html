@@ -143,7 +143,6 @@
       if(ch === ' '){
         // 空白は描画しない（位置だけ進める、次のbeginは現状維持）
         x += w + letter;
-        beginId = nextBegin; // 空白でもタイミングは進めて、間が空くようにする
         return;
       }
 
